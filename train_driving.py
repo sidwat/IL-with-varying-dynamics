@@ -22,10 +22,10 @@ from loss import *
 import matplotlib.pyplot as plt
 
 import reacher
-import ant
-import swimmer
+# import ant
+# import swimmer
 import driving
-import panda_custom
+# import panda_custom
 
 import pickle
 
@@ -43,7 +43,11 @@ torch.utils.backcompat.keepdim_warning.enabled = True
 
 torch.set_default_tensor_type('torch.DoubleTensor')
 use_cuda = torch.cuda.is_available()
+use_cuda = False
+
 device = torch.device("cuda" if use_cuda else "cpu")
+print("the device being used is " + str(device))
+
 
 parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
 parser.add_argument('--delta-s', type=float, default=None, help='parameter delta s')
@@ -62,8 +66,8 @@ parser.add_argument('--damping', type=float, default=1e-1, metavar='G',
                     help='damping (default: 1e-1)')
 parser.add_argument('--seed', type=int, default=1111, metavar='N',
                     help='random seed (default: 1111')
-parser.add_argument('--test_seed', type=int, default=2333, metavar='N',
-                    help='test env random seed (default: 2333')
+parser.add_argument('--test_seed', type=int, default=1001, metavar='N',
+                    help='test env random seed (default: 1001')
 parser.add_argument('--batch-size', type=int, default=5000, metavar='N',
                     help='size of a single batch')
 parser.add_argument('--log-interval', type=int, default=1, metavar='N',
@@ -95,11 +99,13 @@ parser.add_argument('--eval-epochs', type=int, default=3, metavar='E',
                     help='epochs to evaluate model')
 parser.add_argument('--prior', type=float, default=0.2,
                     help='ratio of confidence data')
+parser.add_argument('--sleep_time', type=float, default=0.05,
+                    help='sleep time during evaluation')
 parser.add_argument('--ofolder', type=str, default='log')
 parser.add_argument('--ifolder', type=str, default='demonstrations')
 parser.add_argument('--demo_file_list', type=str, nargs='+')
 parser.add_argument('--percent_list', type=float, nargs='+')
-parser.add_argument('--test_episodes', type=int, help='Number of episodes')
+parser.add_argument('--test_episodes', type=int, help='Number of episodes', default=1)
 parser.add_argument('--result_file', type=str, help='Result file name')
 parser.add_argument('--snapshot_file', type=str, help='Snapshot file name')
 args = parser.parse_args()
@@ -110,14 +116,14 @@ num_inputs = env.observation_space.shape[0]
 num_actions = env.action_space.shape[0]
 
 obs_len_init = num_inputs
-env.reset()
+env.reset(seed = args.seed)
 
 
-env.seed(args.seed)
+# env.seed(args.seed)
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-policy_net = CloningPolicy(num_inputs, num_actions, args.hidden_dim).float()
+policy_net = CloningPolicy(num_inputs, num_actions, args.hidden_dim).float().to(device)
 value_net = Value(num_inputs, args.hidden_dim).float().to(device)
 
 disc_criterion = nn.BCEWithLogitsLoss()
@@ -161,7 +167,11 @@ def load_demos(file_list, percent_list):
 def load_and_train_inverse_dynamic(args, env):
     feasible_seq = []
     feasible_traj = []
-    file_list = glob.glob('demos/'+args.env+'_random_explore*.pkl')
+    if 'Fast' in args.env:
+        file_list = ['demos/driving-fast.pkl', 'demos/driving-fast-suboptimal.pkl']
+    else:
+        file_list = ['demos/driving-slow.pkl', 'demos/driving-slow-suboptimal.pkl']
+    print(file_list)
     order = np.random.permutation(len(file_list))
     episodes = pickle.load(open(file_list[order[0]], 'rb'))
     for j in range(len(episodes)):
@@ -177,16 +187,16 @@ def predict_action_with_inverse(args, env, sequences, obs_len_init, num_inputs, 
     i = 0
     for sequence in sequences:
       try:
-        env.reset()
+        env.reset(seed = args.seed)
         norms.append([])
         state = env.reset_with_obs(sequence[0][0:obs_len_init])
-        for step in range(len(sequence)-1):
-            action = env.inverse_dynamic(state[0:num_inputs], sequence[step+1][0:num_inputs])
+        for stp in range(len(sequence)-1):
+            action = env.inverse_dynamic(state[0:num_inputs], sequence[stp+1][0:num_inputs])
             action = np.array([action])
-            next_state, _, _, _ = env.step(action)
+            next_state, _, _, _, _= env.step(action)
             if i >= state_action_len:
                 state_action_pairs.append(np.concatenate([state[0:num_inputs], action], axis=0))
-            norms[-1].append(np.linalg.norm(next_state - sequence[step+1][0:num_inputs]))
+            norms[-1].append(np.linalg.norm(next_state - sequence[stp+1][0:num_inputs]))
             state = next_state
         i += 1
       except Exception as reason:
@@ -270,6 +280,7 @@ if np.sum(weight) != 1:
 mean_reward_list = []
 min_reward_list = []
 max_reward_list = []
+std_reward_list = []
 
 all_idx = np.arange(0, expert_traj.shape[0])
 
@@ -279,15 +290,21 @@ result_dir = os.path.dirname(args.result_file)
 os.makedirs(result_dir, exist_ok=True)
 max_mean_reward = -1000000000
 
+start_time = time.time()
 for i_episode in range(args.num_epochs):
-    env.seed(int(time.time()))
+    # env.seed(int(time.time()))
+    policy_net.to(device)
+    value_net.to(device)
+
+    new_seed = int(time.time())
     loss_count = 0
     loss_sum = 0
     for iter_num in range(expert_traj.shape[0]//64):
         policy_optimizer.zero_grad()
-        idx = np.random.choice(all_idx, 64, p=weight.reshape(-1))
+        idx = np.random.choice(all_idx, 64, p=weight.reshape(-1)) #sampling 
         expert_state_next_state = expert_traj[idx, :]
         expert_state_next_state = torch.Tensor(expert_state_next_state).float().to(device)
+        # print(expert_state_next_state.device)
         e_action = policy_net(expert_state_next_state[:, 0:num_inputs])
         loss = torch.nn.SmoothL1Loss(reduction='none')(e_action.squeeze(), expert_state_next_state[:, num_inputs:].squeeze())
         loss = torch.mean(loss)
@@ -297,24 +314,31 @@ for i_episode in range(args.num_epochs):
         loss_count += 1
     print('Cloning Loss, ', loss_sum/loss_count)
     if i_episode % args.log_interval == 0:
-        env.seed(args.test_seed)
+        # env.seed(args.test_seed)
+        end_time = time.time()
         reward_list = []
         with torch.no_grad():
           for i in range(args.test_episodes):
-            state = env.reset()
+            state = env.reset(seed = (i+1)*args.test_seed)
             reward_sum = 0
             while True:
-                state = torch.from_numpy(state).float().unsqueeze(0)
+                env.render()
+                state = torch.from_numpy(state).float().unsqueeze(0).to(device)
                 action = policy_net(state)
-                action = action.data[0].numpy()
+                action = action.data[0].cpu().numpy()
+                # print(action)
                 action = np.clip(action, env.action_space.low, env.action_space.high)
-                next_state, true_reward, done, infos = env.step(action)
+                next_state, true_reward, done,_, infos = env.step(action)
                 reward_sum += true_reward
                 if done:
                     break
                 state = next_state
+                time.sleep(args.sleep_time)
             reward_list.append(reward_sum)
-        print('Episode {}, Average reward: {:.3f}, Max reward: {:.3f}, Min reward: {:.3f}'.format(i_episode, np.mean(reward_list), max(reward_list), min(reward_list)))
+            env.close()
+        print('Episode {}, Average reward: {:.3f}, Max reward: {:.3f}, Min reward: {:.3f}, elapsed_time: {}'.format(i_episode, np.mean(reward_list), max(reward_list), min(reward_list), end_time - start_time))
+        # print(reward_list)
+        start_time = time.time()
         mean_reward_list.append(np.mean(reward_list))
         std_reward_list.append(reward_list)
         max_reward_list.append(max(reward_list))
@@ -330,3 +354,4 @@ for i_episode in range(args.num_epochs):
 
 episode_id_list = np.array(list(range(((args.num_epochs-1) // args.log_interval) + 1))) * args.log_interval + 1
 pickle.dump((' '.join(sys.argv[1:]), episode_id_list, mean_reward_list, min_reward_list, max_reward_list, std_reward_list), open(args.result_file, 'wb'))
+# print("elapsed time is ", end_time - start_time)

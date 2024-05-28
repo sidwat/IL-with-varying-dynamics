@@ -2,14 +2,20 @@ import numpy as np
 from gym import utils
 from gym.envs.mujoco import mujoco_env
 import gym
+from gym import spaces
 import os
 import random
 
-class ReacherCustomEnv(mujoco_env.MujocoEnv, utils.EzPickle):
-    def __init__(self, config_file='reacher.xml'):
+class ReacherCustomEnv(mujoco_env.MuJocoPyEnv, utils.EzPickle):
+    metadata = {'render_modes': ['human', 'rgb_array', 'depth_array'], 'render_fps': 50}
+    def __init__(self, config_file='reacher.xml', **kwargs):
         dir_path = os.path.dirname(os.path.realpath(__file__))
         utils.EzPickle.__init__(self)
-        mujoco_env.MujocoEnv.__init__(self, ('%s/assets/'+config_file) % dir_path, 2)
+        # print("fullpath is here ", self.fullpath)
+        # self._initialize_simulation()
+        self.observation_space = spaces.Box(low = -np.inf, high = np.inf, shape=(11,), dtype=np.float32)
+        # self.action_space = spaces.Box(low = -np.inf, high = np.inf, shape=(2,), dtype=np.float32)
+        mujoco_env.MuJocoPyEnv.__init__(self, ('%s/assets/'+config_file) % dir_path, 2, self.observation_space, **kwargs)
 
     def step(self, a):
         vec = self.get_body_com("fingertip")-self.get_body_com("target")
@@ -21,7 +27,7 @@ class ReacherCustomEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         done = False
         reward_for_eval = reward_dist * 10# - np.sqrt(self.sim.data.qvel.flat[0]**2+self.sim.data.qvel.flat[1]**2) / 20.
 
-        return ob, reward, done, dict(reward_dist=reward_dist, reward_ctrl=reward_ctrl, reward_eval=reward_for_eval)
+        return ob, reward, done, False, dict(reward_dist=reward_dist, reward_ctrl=reward_ctrl, reward_eval=reward_for_eval)
 
     def viewer_setup(self):
         self.viewer.cam.trackbodyid = 0
@@ -64,12 +70,12 @@ class ReacherCustomEnv(mujoco_env.MujocoEnv, utils.EzPickle):
         ])
 
 class ReacherCustomAction1Env(ReacherCustomEnv):
-    def __init__(self):
-        super(ReacherCustomAction1Env, self).__init__('reacher_action1.xml')
+    def __init__(self, **kwargs):
+        super(ReacherCustomAction1Env, self).__init__('reacher_action1.xml', **kwargs)
 
 class ReacherCustomRAction1Env(ReacherCustomEnv):
-    def __init__(self):
-        super(ReacherCustomRAction1Env, self).__init__('reacher_action1.xml')
+    def __init__(self, **kwargs):
+        super(ReacherCustomRAction1Env, self).__init__('reacher_action1.xml', **kwargs)
         self.action_space = gym.spaces.Box(low=np.array([-1.,-1.]).astype('float32'), high=np.array([0.,0.]).astype('float32'))
 
     def step(self, a):
@@ -77,12 +83,12 @@ class ReacherCustomRAction1Env(ReacherCustomEnv):
         return super(ReacherCustomRAction1Env, self).step(a)
 
 class ReacherCustomAction2Env(ReacherCustomEnv):
-    def __init__(self):
-        super(ReacherCustomAction2Env, self).__init__('reacher_action2.xml')
+    def __init__(self, **kwargs):
+        super(ReacherCustomAction2Env, self).__init__('reacher_action2.xml', **kwargs)
 
 class ReacherCustomRAction2Env(ReacherCustomEnv):
-    def __init__(self):
-        super(ReacherCustomRAction2Env, self).__init__('reacher_action2.xml')
+    def __init__(self, **kwargs):
+        super(ReacherCustomRAction2Env, self).__init__('reacher_action2.xml', kwargs)
         self.action_space = gym.spaces.Box(low=np.array([0.,0.]).astype('float32'), high=np.array([1.,1.]).astype('float32'))
 
     def step(self, a):

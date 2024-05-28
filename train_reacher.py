@@ -22,10 +22,10 @@ from loss import *
 import matplotlib.pyplot as plt
 
 import reacher
-import ant
-import swimmer
-import driving
-import panda_custom
+# import ant
+# import swimmer
+# import driving
+# import panda_custom
 
 import pickle
 
@@ -42,8 +42,10 @@ torch.utils.backcompat.broadcast_warning.enabled = True
 torch.utils.backcompat.keepdim_warning.enabled = True
 
 torch.set_default_tensor_type('torch.DoubleTensor')
-use_cuda = torch.cuda.is_available()
+# use_cuda = torch.cuda.is_available()
+# use_cuda = False
 device = torch.device("cuda" if use_cuda else "cpu")
+print("device being used is ", device)
 
 parser = argparse.ArgumentParser(description='PyTorch actor-critic example')
 parser.add_argument('--delta-s', type=float, default=None, help='parameter delta s')
@@ -80,7 +82,7 @@ parser.add_argument('--lr', type=float, default=1e-3, metavar='L',
                     help='learning rate')
 parser.add_argument('--optimality', action='store_true',
                     help='use optimality or not')
-parser.add_argument('--inverse_weight', action='store_true', 
+parser.add_argument('--feasibility', action='store_true', 
                     help='use feasibility or not')
 parser.add_argument('--only', action='store_true',
                     help='only use labeled samples')
@@ -108,7 +110,7 @@ obs_len_init = 11
 env.reset()
 
 
-env.seed(args.seed)
+# env.seed(args.seed)
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
@@ -120,7 +122,7 @@ value_criterion = nn.MSELoss()
 disc_optimizer = optim.Adam(discriminator.parameters(), args.lr)
 value_optimizer = optim.Adam(value_net.parameters(), args.vf_lr)
 
-inverse_model = InverseModel(num_inputs*2, args.hidden_dim, num_actions, 6).float()
+inverse_model = InverseModel(num_inputs*2, args.hidden_dim, num_actions, 6).float().to(device)
 inverse_optimizer = optim.Adam(inverse_model.parameters(), 0.01)
 
 def select_action(state):
@@ -133,8 +135,8 @@ def update_params(batch):
     rewards = torch.Tensor(batch.reward).float().to(device)
     masks = torch.Tensor(batch.mask).float().to(device)
     actions = torch.Tensor(np.concatenate(batch.action, 0)).float().to(device)
-    states = torch.Tensor(batch.state).float().to(device)
-    values = value_net(Variable(states))
+    states = torch.Tensor(np.array(batch.state)).float().to(device)
+    values = value_net(Variable(states)).to(device)
 
     returns = torch.Tensor(actions.size(0),1).float().to(device)
     deltas = torch.Tensor(actions.size(0),1).float().to(device)
@@ -143,7 +145,11 @@ def update_params(batch):
     prev_return = 0
     prev_value = 0
     prev_advantage = 0
+    first_iteration = True
     for i in reversed(range(rewards.size(0))):
+        if first_iteration:
+            print("first for loop is running")
+            first_iteration = False
         returns[i] = rewards[i] + args.gamma * prev_return * masks[i]
         deltas[i] = rewards[i] + args.gamma * prev_value * masks[i] - values.data[i]
         advantages[i] = deltas[i] + args.gamma * args.tau * prev_advantage * masks[i]
@@ -151,12 +157,15 @@ def update_params(batch):
         prev_return = returns[i, 0]
         prev_value = values.data[i, 0]
         prev_advantage = advantages[i, 0]
-
+    print("first for loop is done")
     targets = Variable(returns)
-
+    first_iteration = True
     batch_size = math.ceil(states.shape[0] / args.vf_iters)
     idx = np.random.permutation(states.shape[0])
     for i in range(args.vf_iters):
+        if first_iteration:
+            print("second for loop is running")
+            first_iteration = False
         smp_idx = idx[i * batch_size: (i + 1) * batch_size]
         smp_states = states[smp_idx, :]
         smp_targets = targets[smp_idx, :]
@@ -165,7 +174,7 @@ def update_params(batch):
         value_loss = value_criterion(value_net(Variable(smp_states)), smp_targets)
         value_loss.backward()
         value_optimizer.step()
-
+    print("second for loop is done")
     advantages = (advantages - advantages.mean()) / advantages.std()
 
     action_means, action_log_stds, action_stds = policy_net(Variable(states.cpu()))
@@ -186,7 +195,7 @@ def update_params(batch):
         std0 = Variable(std1.data)
         kl = log_std1 - log_std0 + (std0.pow(2) + (mean0 - mean1).pow(2)) / (2.0 * std1.pow(2)) - 0.5
         return kl.sum(1, keepdim=True)
-
+    print("trpo step is passed")
     trpo_step(policy_net, get_loss, get_kl, args.max_kl, args.damping)
 
 def expert_reward(states, actions):
@@ -200,7 +209,11 @@ def load_demos(file_list, percent_list):
     confs = []
     sequences = []
     initial_reward = []
+    first_iteration = True
     for k in range(len(file_list)):
+        if first_iteration:
+            print("third for loop is running")
+            first_iteration = False
         fname = file_list[k]
         episodes = pickle.load(open(fname, 'rb'))
         len_epi_for_train = len(episodes)
@@ -217,6 +230,7 @@ def load_demos(file_list, percent_list):
                 confs.append([reward_sum])
             initial_reward.append(np.concatenate([episode['state'][0].squeeze(), np.array([reward_sum])]))
             sequences[-1] = np.array(sequences[-1])
+    print("third for loop is done")
     confs = np.array(confs)
     print(np.mean(confs))
     return np.array(state_action_pairs), confs, sequences, np.array(initial_reward)
@@ -226,7 +240,11 @@ def train_inverse_dynamic(num_epochs, feasible_traj, inverse_model, action_dim, 
     training = inverse_model.training
     inverse_model.train()
     state_dim = (feasible_traj.shape[1]-action_dim)//2
+    first_iteration = True
     for ii in range(num_epochs):
+        if first_iteration:
+            print("inverse dynamic for loop is running")
+            first_iteration = False
         order = np.random.permutation(feasible_traj.shape[0])
         loss_epoch = 0
         for jj in range((len(feasible_traj)-1)//bs+1):
@@ -247,6 +265,7 @@ def train_inverse_dynamic(num_epochs, feasible_traj, inverse_model, action_dim, 
             loss_epoch += loss.item()
         print(output_action[-1], sampled_batch[:,-action_dim:].detach()[-1])
         print('inverse loss', loss_epoch/((len(feasible_traj)-1)//bs+1))
+    print("inverse dynamic for loop is done")
     inverse_model.train(training)
 
 
@@ -260,17 +279,26 @@ except:
 if args.feasibility or args.optimality:
     feasible_seq = []
     feasible_traj = []
-    file_list = glob.glob('demos/'+args.env+'_random_explore*.pkl')
+    file_list = glob.glob('demos/'+args.env+'_*.pkl')
     print(file_list)
     order = np.random.permutation(len(file_list))
     episodes = pickle.load(open(file_list[order[0]], 'rb'))
+    first_iteration = True
     for j in range(len(episodes)):
+        if first_iteration:
+            print("feasibility first for loop is running")
+            first_iteration = False
         episode = episodes[j]
         feasible_seq.append([])
         for i in range(len(episode['action'])):
             feasible_seq[-1].append(np.concatenate([episode['state'][i].squeeze()[0:num_inputs], episode['action'][i].reshape(-1)]))
     
+    print("feasibility first for loop is done")
+    first_iteration = True
     for k in range(10):
+        if first_iteration:
+            print("feasibility second for loop is running")
+            first_iteration = False
         order1 = np.random.permutation(order[1:10])
         for j in order1:
             feasible_traj = []
@@ -280,33 +308,39 @@ if args.feasibility or args.optimality:
                     feasible_traj.append(np.concatenate([episode['state'][i].squeeze()[0:num_inputs], episode['state'][i+1].squeeze()[0:num_inputs], episode['action'][i].reshape(-1)]))
             feasible_traj = np.array(feasible_traj)
             train_inverse_dynamic(1, feasible_traj, inverse_model, action_dim=env.action_space.shape[0])
+    print("feasibility second for loop is done")
     del feasible_traj
-        
+
     all_sequences = feasible_seq + sequences
     len_list = []
     for seq in all_sequences:
         len_list.append(len(seq))
     len_list = np.array(len_list)
     norms = []
+    first_iteration = True
     for sequence in all_sequences:
+        if first_iteration:
+            print("feasibility third for loop is running")
+            first_iteration = False
         env.reset()
         norms.append([])
         state = env.reset_with_obs(sequence[0][0:obs_len_init])
-        for step in range(len(sequence)-1):
-            action = inverse_model(torch.from_numpy(np.concatenate([state[0:num_inputs], sequence[step+1][0:num_inputs]-state[0:num_inputs]])).float().to(device).unsqueeze(0))
-            action = action.data[0].numpy()
+        for stp in range(len(sequence)-1):
+            action = inverse_model(torch.from_numpy(np.concatenate([state[0:num_inputs], sequence[stp+1][0:num_inputs]-state[0:num_inputs]])).float().to(device).unsqueeze(0))
+            action = action.data[0].cpu().numpy()
             if args.delta_s is not None:
                 action = 2*(np.random.rand(*action.shape)-0.5)*args.delta_s + action
             if 'action1' in args.env:
                 action = np.clip(action, -1., 0.)
             elif 'action2' in args.env:
                 action = np.clip(action, 0., 1.)
-            next_state, _, _, _ = env.step(action)
+            next_state, bla, bla, bla, bla = env.step(action)
             if 'reacher' in args.env:
-                norms[-1].append(np.linalg.norm(next_state[0:4] - sequence[step+1][0:num_inputs][0:4]))
+                norms[-1].append(np.linalg.norm(next_state[0:4] - sequence[stp+1][0:num_inputs][0:4]))
             else:
-                norms[-1].append(np.linalg.norm(next_state[0:num_inputs] - sequence[step+1][0:num_inputs]))
+                norms[-1].append(np.linalg.norm(next_state[0:num_inputs] - sequence[stp+1][0:num_inputs]))
             state = next_state
+    print("feasibility third for loop is done")
     norms = np.array([sum(norms1) for norms1 in norms])
     norms = norms/len_list
     max_ = np.max(norms[0:len(feasible_seq)])
@@ -386,9 +420,15 @@ max_mean_reward = -1000000000
 
 if 'Ant' in args.env:
     env = gym.make(args.env)
-
+first_iteration = True
 for i_episode in range(args.num_epochs):
-    env.seed(int(time.time()))
+    # policy_net.to(device)
+    # value_net.to(device)
+    if first_iteration:
+        print("episodic for loop is running")
+        first_iteration = False
+    # print("episodic for loop is running")
+    # env.seed(int(time.time()))
     memory = Memory()
 
     num_steps = 0
@@ -400,17 +440,23 @@ for i_episode in range(args.num_epochs):
     mem_actions = []
     mem_mask = []
     mem_next = []
-
+    second_iteration = True
     while num_steps < args.batch_size:
-        state = env.reset()
-
+        state = env.reset()[0]
+        if second_iteration:
+            print("second episodic inner while loop is running")
+            second_iteration = False
         reward_sum = 0
+        third_iteration = True
         for t in range(10000): # Don't infinite loop while learning
+            if third_iteration:
+                print("third episodic inner for loop is running")
+                third_iteration = False
             action = select_action(state[0:num_inputs])
             action = action.data[0].numpy()
             states.append(np.array([state[0:num_inputs]]))
             actions.append(np.array([action]))
-            next_state, true_reward, done, _ = env.step(action)
+            next_state, true_reward, done, _, _ = env.step(action)
             reward_sum += true_reward
 
             mask = 1
@@ -424,61 +470,66 @@ for i_episode in range(args.num_epochs):
                 break
 
             state = next_state
+        print("third episodic inner for loop is done")
         num_steps += (t-1)
         num_episodes += 1
 
         reward_batch.append(reward_sum)
-
+    print("second episodic inner while loop is done")
     rewards = expert_reward(states, mem_next)
     for idx in range(len(states)):
         memory.push(states[idx][0], actions[idx], mem_mask[idx], mem_next[idx], \
                     rewards[idx][0])
     batch = memory.sample()
     update_params(batch)
-
+    print("trpo done")
     ### update discriminator ###
     mem_next = torch.from_numpy(np.array(mem_next).squeeze())
     states = torch.from_numpy(np.array(states).squeeze())
-    
+    print("milestone1")
     idx = np.random.choice(all_idx, num_steps, p=weight.reshape(-1))
     expert_state_next_state = expert_traj[idx, :]
     weight_sample = weight[idx, :]
     expert_state_next_state = torch.Tensor(expert_state_next_state).float().to(device)
     weight_sample = torch.from_numpy(weight_sample).float().to(device)
-
+    print("milestone2")
     state_next_state = torch.cat((states, mem_next), 1).float().to(device)
 
     fake = discriminator(state_next_state)
     real = discriminator(expert_state_next_state)
-
+    print("milestone3")
     disc_optimizer.zero_grad()
     disc_loss = disc_criterion(fake, torch.ones(states.shape[0], 1).to(device)) + \
                 disc_criterion(real, torch.zeros(expert_state_next_state.size(0), 1).to(device))
     disc_loss.backward()
     disc_optimizer.step()
     ############################
+    print("milestone4")
     if i_episode % args.log_interval == 0:
-        env.seed(args.test_seed)
+        # env.seed(args.test_seed)
         reward_list = []
+        print("some loop started")
         with torch.no_grad():
           for i in range(args.test_episodes):
-            state = env.reset()
+            state = env.reset()[0]
             reward_sum = 0
-            while True: # Don't infinite loop while learning
+            for _ in range(1000): # Don't infinite loop while learning
                 action = select_action(state[0:num_inputs])
                 action = action.data[0].numpy()
                 action = np.clip(action, env.action_space.low, env.action_space.high)
-                next_state, true_reward, done, infos = env.step(action)
+                next_state, true_reward, done, _, infos= env.step(action)
+                # print(infos)
                 if 'reward_eval' in infos:
                     reward_sum += infos['reward_eval']
                 else:
                     reward_sum += true_reward
-
+                    
                 if done:
                     break
 
                 state = next_state
             reward_list.append(reward_sum)
+        print("some loop done")
         print('Episode {}, Average reward: {:.3f}, Max reward: {:.3f}, Min reward: {:.3f}, Loss (disc): {:.3f}'.format(i_episode, np.mean(reward_list), max(reward_list), min(reward_list), disc_loss.item()))
         mean_reward_list.append(np.mean(reward_list))
         std_reward_list.append(reward_list)
@@ -486,10 +537,10 @@ for i_episode in range(args.num_epochs):
         min_reward_list.append(min(reward_list))
         if max_mean_reward < np.mean(reward_list):
             max_mean_reward = np.mean(reward_list)
-            torch.save({'policy_net':policy_net.cpu().state_dict(), 'value_net':value_net.cpu().state_dict()}, args.snapshot_file.replace('.tar', 'best.tar'))
+        #     torch.save({'policy_net':policy_net.cpu().state_dict(), 'value_net':value_net.cpu().state_dict()}, args.snapshot_file.replace('.tar', 'best.tar'))
 
-        torch.save({'policy_net':policy_net.cpu().state_dict(), 'value_net':value_net.cpu().state_dict()}, args.snapshot_file)
-
+        # torch.save({'policy_net':policy_net.cpu().state_dict(), 'value_net':value_net.cpu().state_dict()}, args.snapshot_file)
+        
         episode_id_list = np.array(list(range(((args.num_epochs-1) // args.log_interval) + 1))) * args.log_interval + 1
         pickle.dump((' '.join(sys.argv[1:]), episode_id_list, mean_reward_list, min_reward_list, max_reward_list, std_reward_list), open(args.result_file, 'wb'))
 

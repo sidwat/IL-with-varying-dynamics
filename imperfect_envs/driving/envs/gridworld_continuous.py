@@ -36,7 +36,9 @@ class PidVelPolicy:
         self.errors.append(error)
         return acc
 
-    def reset(self):
+    def reset(self, seed = None):
+        if seed is not None:
+            random.seed(seed)
         self._target_vel = None
         self.previous_error = 0
         self.integral = 0
@@ -75,13 +77,16 @@ class GridworldContinuousEnv(gym.Env):
 
     def step(self, action: np.ndarray, verbose: bool = False):
         self.step_num += 1
-
+        # for i in range(len(action)):
+        #     action[i] = action[i]*0.1
         action = action * 0.1
+        # print(action)
         car = self.world.dynamic_agents[0]
         acc = self.accelerate.action(self._get_obs())
         action = np.append(action, acc)
         if self.stop:
             action = np.array([0, -5])
+        # print(type(car))
         car.set_control(*action)
         self.world.tick()
 
@@ -98,17 +103,17 @@ class GridworldContinuousEnv(gym.Env):
             self.stop = True
         #if self.step_num < 6:
         #    done = False
-        return self._get_obs(), reward, done, {'episode': {'r': reward, 'l': self.step_num}}
+        return self._get_obs(), reward, done, True, {'episode': {'r': reward, 'l': self.step_num}}
 
-    def reset(self):
+    def reset(self, seed = None):
         self.world.reset()
         self.stop = False
         self.target_count = 0
-
+        if seed is not None:
+            random.seed(seed)
         self.buildings = [
             Building(Point(self.width/2., self.height/2.-3), Point(self.obstacle_width,1), "gray80"),
         ]
-
         random_dis = random.random()*2.
         random_angle = random.random()*2*np.pi
         init_x = self.start[0] + random_dis*np.cos(random_angle)
@@ -198,7 +203,11 @@ class GridworldContinuousEnv(gym.Env):
         self.world.render()
 
 class GridworldContinuousSlowRandomInitEnv(GridworldContinuousEnv):
-    def reset(self):
+    def reset(self, seed = None):
+        
+        if seed is not None:
+            random.seed(seed)
+        
         self.world.reset()
 
         self.stop = False

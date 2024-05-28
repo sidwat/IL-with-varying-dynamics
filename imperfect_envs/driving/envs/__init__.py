@@ -1,1 +1,1 @@
-from driving.envs.gridworld_continuous import GridworldContinuousEnv, GridworldContinuousSlowRandomInitEnv, GridworldContinuousFastRandomInitEnv
+from driving.envs.gridworld_continuous import GridworldContinuousEnv, GridworldContinuousSlowRandomInitEnv, GridworldContinuousFastRandomInitEnv, PidVelPolicy
