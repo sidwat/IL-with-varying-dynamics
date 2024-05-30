@@ -5,6 +5,7 @@ import driving
 import time
 from gym import make 
 import numpy as np
+import argparse
 
 # env = make("ContinuousSlowRandom-v0")
 # # env = wrappers.SeedWrapper(env, 42)  # Set seed to 42
@@ -52,6 +53,35 @@ import numpy as np
 #     data = pkl.load(f)
 # print(data[0])
 
-import random
-random.seed(10)
-print(random.random())
+parser = argparse.ArgumentParser(description='Test the model')
+parser.add_argument('--num-episodes', type=int, default=10)
+parser.add_argument('--seed', type=int, default=1001)
+parser.add_argument('--use-sleep', action='store_true')
+parser.add_argument('--env', type=str, default='ContinuousFastRandom-v0')
+args = parser.parse_args()
+
+environment = args.env
+env1 = gym.make(environment)
+# env1.set_goal(0.5, 0.8)
+num_inputs = env1.observation_space.shape[0]
+num_actions = env1.action_space.shape[0]
+print(num_inputs, num_actions)
+best_reward_list = []
+for i in range(args.num_episodes):
+    accumulator = 0
+    env1.reset()
+    for _ in range(10000):
+        env1.render()
+        action = env1.action_space.sample()
+        next_state, reward, done, _, info= env1.step(action)
+        print(next_state, reward, done, info)
+        accumulator += reward
+        if done :
+            break
+        if args.use_sleep: 
+            time.sleep(0.05)
+    print("episode {} done : reward {}".format(i, accumulator))
+    best_reward_list.append(accumulator)
+best_reward_list = np.array(best_reward_list)
+env1.close()
+
