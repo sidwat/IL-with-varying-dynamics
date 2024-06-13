@@ -66,7 +66,7 @@ class GridworldContinuousEnv(gym.Env):
             np.array([-1.]), np.array([1.]), dtype=np.float32
         )
         self.goal_radius = 2.
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(7,))
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(14,))
         self.start = np.array([self.width/2.,self.goal_radius])
         self.goal = np.array([self.width/2., self.height-self.goal_radius])
         self.max_dist = np.linalg.norm(self.goal-self.start,2)
@@ -82,12 +82,14 @@ class GridworldContinuousEnv(gym.Env):
         action = action * 0.1
         # print(action)
         car = self.world.dynamic_agents[0]
+        goal_loc = self.world.dynamic_agents[1]
         acc = self.accelerate.action(self._get_obs())
         action = np.append(action, acc)
         if self.stop:
             action = np.array([0, -5])
         # print(type(car))
         car.set_control(*action)
+        goal_loc.set_control(0, 0)
         self.world.tick()
 
         reward = self.reward(verbose)
@@ -169,6 +171,7 @@ class GridworldContinuousEnv(gym.Env):
         return_state[0] = 2.* ((return_state[0] / self.width) - 0.5)
         return_state[2] /= self.initial_speed
         return_state[3] /= self.initial_speed
+        # print("get_obs return state ", return_state)
         return return_state
 
     def inverse_dynamic(self, state, next_state):
@@ -201,6 +204,11 @@ class GridworldContinuousEnv(gym.Env):
 
     def render(self):
         self.world.render()
+    
+    def set_goal(self, x, y, verbose = 0):
+        if verbose == 1:
+            print("setting the goal location to ", x, y)
+        self.goal = np.array([x, y])
 
 class GridworldContinuousSlowRandomInitEnv(GridworldContinuousEnv):
     def reset(self, seed = None):

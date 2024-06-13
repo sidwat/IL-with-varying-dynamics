@@ -55,7 +55,7 @@ class Painting(RectangleEntity):
 class Goal(RectangleEntity):
     def __init__(self, center: Point, radius: float, heading: float, color: str = "LightSalmon2"):
         size = Point(radius, radius)
-        movable = False
+        movable = True
         friction = 0.2
         super(Goal, self).__init__(center, heading, size, movable, friction)
         self.color = color
