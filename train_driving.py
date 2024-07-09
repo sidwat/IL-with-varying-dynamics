@@ -38,6 +38,22 @@ import IPython
 
 import sys
 
+# paths = {'optimalfast1038' : '/home/smart/PPO-PyTorch/new_data/ContinuousFastRandom-v0/optimal_data_ContinuousFastRandom-v0_0_10_38_0.pkl',
+#          'suboptimalfast1038' : '/home/smart/PPO-PyTorch/new_data/ContinuousFastRandom-v0/suboptimal_data_ContinuousFastRandom-v0_0_10_38_0.pkl',
+#          'optimalfast1538' : '/home/smart/PPO-PyTorch/new_data/ContinuousFastRandom-v0/optimal_data_ContinuousFastRandom-v0_0_15_38_0.pkl',
+#          'suboptimalfast1538' : '/home/smart/PPO-PyTorch/new_data/ContinuousFastRandom-v0/suboptimal_data_ContinuousFastRandom-v0_0_15_38_0.pkl',
+#          'optimalfast2038' : '/home/smart/PPO-PyTorch/new_data/ContinuousFastRandom-v0/optimal_data_ContinuousFastRandom-v0_0_20_38_0.pkl',
+#          'suboptimalfast2038' : '/home/smart/PPO-PyTorch/new_data/ContinuousFastRandom-v0/suboptimal_data_ContinuousFastRandom-v0_0_20_38_0.pkl',
+#          'optimalslow1038' : '/home/smart/PPO-PyTorch/new_data/ContinuousSlowRandom-v0/optimal_data_ContinuousSlowRandom-v0_0_10_38_0.pkl',
+#          'suboptimalslow1038' : '/home/smart/PPO-PyTorch/new_data/ContinuousSlowRandom-v0/suboptimal_data_ContinuousSlowRandom-v0_0_10_38_0.pkl',
+#          'optimalslow1538' : '/home/smart/PPO-PyTorch/new_data/ContinuousSlowRandom-v0/optimal_data_ContinuousSlowRandom-v0_0_15_38_0.pkl',
+#          'suboptimalslow1538' : '/home/smart/PPO-PyTorch/new_data/ContinuousSlowRandom-v0/suboptimal_data_ContinuousSlowRandom-v0_0_15_38_0.pkl',
+#          'optimalslow2038' : '/home/smart/PPO-PyTorch/new_data/ContinuousSlowRandom-v0/optimal_data_ContinuousSlowRandom-v0_0_20_38_0.pkl',
+#          'suboptimalslow2038' : '/home/smart/PPO-PyTorch/new_data/ContinuousSlowRandom-v0/suboptimal_data_ContinuousSlowRandom-v0_0_20_38_0.pkl'}
+paths = {'optimalfast' : '/home/smart/PPO-PyTorch/new_data/ContinuousFastRandom-v0/combined_list_fast_optimal.pkl',
+         'suboptimalfast' : '/home/smart/PPO-PyTorch/new_data/ContinuousFastRandom-v0/combined_list_fast_suboptimal.pkl',
+         'optimalslow' : '/home/smart/PPO-PyTorch/new_data/ContinuousSlowRandom-v0/combined_list_slow_optimal.pkl',
+         'suboptimalslow' : '/home/smart/PPO-PyTorch/new_data/ContinuousSlowRandom-v0/combined_list_slow_suboptimal.pkl'}
 torch.utils.backcompat.broadcast_warning.enabled = True
 torch.utils.backcompat.keepdim_warning.enabled = True
 
@@ -99,7 +115,7 @@ parser.add_argument('--eval-epochs', type=int, default=3, metavar='E',
                     help='epochs to evaluate model')
 parser.add_argument('--prior', type=float, default=0.2,
                     help='ratio of confidence data')
-parser.add_argument('--sleep_time', type=float, default=0.05,
+parser.add_argument('--sleep_time', type=float, default=0.00,
                     help='sleep time during evaluation')
 parser.add_argument('--ofolder', type=str, default='log')
 parser.add_argument('--ifolder', type=str, default='demonstrations')
@@ -116,6 +132,7 @@ num_inputs = env.observation_space.shape[0]
 num_actions = env.action_space.shape[0]
 
 obs_len_init = num_inputs
+print(obs_len_init)
 env.reset(seed = args.seed)
 
 
@@ -137,6 +154,8 @@ def load_demos(file_list, percent_list):
     for k in range(len(file_list)):
         fname = file_list[k]
         episodes = pickle.load(open(fname, 'rb'))
+        print(len(episodes))
+        # print("inside load demos 1, ", episodes[0]['state'][0].shape)
         len_epi_for_train = len(episodes) if len(episodes) < 1000 else 1000
         for j in range(int(len_epi_for_train*percent_list[k])):
             episode = episodes[j]
@@ -154,13 +173,16 @@ def load_demos(file_list, percent_list):
                     reward_sum += episode['reward'][i].squeeze()
                 else:
                     reward_sum += episode['reward'][i]
+            print(reward_sum, type(reward_sum))
             sequences[-1].append(np.concatenate([episode['state'][len(episode['action'])].squeeze(), episode['action'][len(episode['action'])-1].reshape(-1)]))
             for i in range(len(episode['action'])):
                 confs.append([reward_sum])
-            initial_reward.append(np.concatenate([episode['state'][0][0], np.array([reward_sum])]))
+            # print("in the load demos loop", episode['state'][0][0], np.array([reward_sum]).shape)
+            initial_reward.append(np.concatenate([episode['state'][0][:1], np.array([reward_sum])]))
             sequences[-1] = np.array(sequences[-1])
     confs = np.array(confs)
     print(np.mean(confs))
+    print("inside the load demos ", len(sequences[0][0]))
     return np.array(state_action_pairs), confs, sequences, np.array(initial_reward)
 
 
@@ -168,9 +190,9 @@ def load_and_train_inverse_dynamic(args, env):
     feasible_seq = []
     feasible_traj = []
     if 'Fast' in args.env:
-        file_list = ['demos/driving-fast.pkl', 'demos/driving-fast-suboptimal.pkl']
+        file_list = [paths['optimalfast'], paths['suboptimalfast']]
     else:
-        file_list = ['demos/driving-slow.pkl', 'demos/driving-slow-suboptimal.pkl']
+        file_list = [paths['optimalslow'], paths['suboptimalslow']]
     print(file_list)
     order = np.random.permutation(len(file_list))
     episodes = pickle.load(open(file_list[order[0]], 'rb'))

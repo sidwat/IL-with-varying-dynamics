@@ -83,7 +83,7 @@ class GridworldContinuousEnv(gym.Env):
         # print(action)
         car = self.world.dynamic_agents[0]
         goal_loc = self.world.dynamic_agents[1]
-        acc = self.accelerate.action(self._get_obs())
+        acc = self.accelerate.action(self.get_obs())
         action = np.append(action, acc)
         if self.stop:
             action = np.array([0, -5])
@@ -105,9 +105,9 @@ class GridworldContinuousEnv(gym.Env):
             self.stop = True
         #if self.step_num < 6:
         #    done = False
-        return self._get_obs(), reward, done, True, {'episode': {'r': reward, 'l': self.step_num}}
+        return self.get_obs(), reward, done, True, {'episode': {'r': reward, 'l': self.step_num}}
 
-    def reset(self, seed = None):
+    def reset(self, seed = None, goal = None):
         self.world.reset()
         self.stop = False
         self.target_count = 0
@@ -122,7 +122,8 @@ class GridworldContinuousEnv(gym.Env):
         init_y = self.start[1] + random_dis*np.sin(random_angle)
         self.car = Car(Point(init_x, init_y), np.pi/2., "blue")
         self.car.velocity = Point(0, self.initial_speed)
-
+        if goal is not None:
+            self.set_goal(goal[0], goal[1])
         self.goal_obj = Goal(Point(self.goal[0], self.goal[1]), self.goal_radius, 0.0)
 
         for building in self.buildings:
@@ -133,7 +134,7 @@ class GridworldContinuousEnv(gym.Env):
         self.last_heading = np.pi / 2
 
         self.step_num = 0
-        return self._get_obs()
+        return self.get_obs()
 
     def reset_with_obs(self, obs):
         self.world.reset()
@@ -148,8 +149,8 @@ class GridworldContinuousEnv(gym.Env):
         init_y = (obs[1]/2.+0.5)*self.height
         self.car = Car(Point(init_x, init_y), np.pi/2., "blue")
         self.car.velocity = Point(0, self.initial_speed)
-
-        self.goal_obj = Goal(Point(self.goal[0], self.goal[1]), self.goal_radius, 0.0)
+        
+        self.goal_obj = Goal(Point(obs[7], obs[8]), self.goal_radius, 0.0)
 
         for building in self.buildings:
             self.world.add(building)
@@ -159,9 +160,9 @@ class GridworldContinuousEnv(gym.Env):
         self.last_heading = np.pi / 2
 
         self.step_num = 0
-        return self._get_obs()
+        return self.get_obs()
 
-    def _get_obs(self):
+    def get_obs(self):
         """
         Get state of car
         """
@@ -211,7 +212,7 @@ class GridworldContinuousEnv(gym.Env):
         self.goal = np.array([x, y])
 
 class GridworldContinuousSlowRandomInitEnv(GridworldContinuousEnv):
-    def reset(self, seed = None):
+    def reset(self, seed = None, goal = None):
         
         if seed is not None:
             random.seed(seed)
@@ -239,7 +240,8 @@ class GridworldContinuousSlowRandomInitEnv(GridworldContinuousEnv):
         init_heading = np.pi/2. # np.arctan2(self.goal[1] - init_y, self.goal[0]-init_x)
         self.car = Car(Point(init_x, init_y), init_heading, "blue")
         self.car.velocity = Point(0, self.initial_speed)
-
+        if goal is not None:
+            self.set_goal(goal[0], goal[1])
         self.goal_obj = Goal(Point(self.goal[0], self.goal[1]), self.goal_radius, 0.0)
 
         for building in self.buildings:
@@ -250,7 +252,7 @@ class GridworldContinuousSlowRandomInitEnv(GridworldContinuousEnv):
         self.last_heading = np.pi / 2
 
         self.step_num = 0
-        return self._get_obs()
+        return self.get_obs()
 
 class GridworldContinuousFastRandomInitEnv(GridworldContinuousSlowRandomInitEnv):
     def __init__(self,
